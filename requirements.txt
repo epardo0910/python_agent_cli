@@ -1,0 +1,5 @@
+# For a rich CLI interface
+rich
+Flask
+requests
+gunicorn
