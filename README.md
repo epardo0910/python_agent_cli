@@ -26,11 +26,40 @@ El agente puede:
 
 ## Próximos Pasos y Mejoras Pendientes
 
-Para mejorar la funcionalidad y robustez del agente, se han identificado los siguientes pasos:
+Para evolucionar el agente hacia una "CLI de Gemini" más completa y robusta, se proponen los siguientes pasos, organizados por áreas clave:
 
-1.  **Refinar el Prompt de Ollama para Respuestas Concisas:** Ajustar el prompt para que Ollama genere respuestas más directas y menos verbosas después de ejecutar una herramienta.
-2.  **Implementar un Manejo de Errores y Logging más Robusto:** Mejorar la estrategia de manejo de errores y el registro de eventos.
-3.  **Añadir Más Herramientas:** Ampliar el conjunto de herramientas disponibles para el agente (ej., buscar contenido en archivos, realizar peticiones web, interactuar con Git).
-4.  **Mejorar la Gestión de la Memoria a Largo Plazo:** Implementar un sistema más dinámico para gestionar y actualizar la memoria a largo plazo del agente.
-5.  **Implementar Autenticación/Autorización:** Añadir mecanismos de seguridad para el endpoint del agente.
-6.  **Desplegar con un Servidor WSGI de Producción:** Configurar el agente para que se ejecute con un servidor WSGI de producción.
+### 1. Expansión y Refinamiento de Herramientas
+
+*   **Añadir Herramientas Esenciales:** Ampliar el conjunto de herramientas disponibles para el agente, incluyendo:
+    *   `replace`: Para modificar contenido de archivos de forma segura.
+    *   `search_file_content`: Para buscar patrones dentro de archivos.
+    *   `glob`: Para encontrar archivos por patrones.
+    *   `web_fetch`: Para realizar peticiones web y procesar contenido de URLs.
+    *   Herramientas para interactuar con sistemas de control de versiones (ej. Git).
+*   **Manejo de Errores en Herramientas:** Implementar un manejo de errores más robusto dentro de cada herramienta para una recuperación más elegante.
+
+### 2. Gestión Avanzada del Contexto y la Memoria
+
+*   **Mejorar la Gestión de la Memoria a Largo Plazo:** Desarrollar un sistema más dinámico y automático para:
+    *   Extraer y almacenar contexto relevante de las interacciones.
+    *   Gestionar y actualizar la memoria a largo plazo del agente de forma más inteligente.
+    *   Almacenar preferencias del usuario y "lecciones aprendidas" de manera estructurada.
+*   **Refinar el Prompt de Ollama para Respuestas Concisas:** Ajustar el prompt para que Ollama genere respuestas más directas y menos verbosas, especialmente después de ejecutar una herramienta.
+
+### 3. Estrategias de Razonamiento y Lógica del Agente
+
+*   **Implementar Planificación de Tareas:** Capacitar al agente para que formule planes de acción detallados antes de ejecutar secuencias de herramientas complejas.
+*   **Verificación Post-Acción:** Desarrollar mecanismos para que el agente verifique los resultados de sus acciones (ej. ejecutando tests, linters, comandos de construcción).
+*   **Manejo de Ambigüedad y Clarificación:** Mejorar la capacidad del agente para identificar instrucciones ambiguas y solicitar aclaraciones al usuario.
+*   **Adherencia a Convenciones:** Fortalecer la lógica para que el agente respete las convenciones de codificación y estructura del proyecto.
+
+### 4. Interfaz de Usuario y Seguridad
+
+*   **Interfaz Web (Visualización en Navegador):** Desarrollar una interfaz web básica que permita:
+    *   Visualizar el historial de conversación.
+    *   Enviar prompts al agente.
+    *   Mostrar las respuestas del agente en tiempo real.
+    *   Considerar el uso de Flask/FastAPI para el backend y HTML/CSS/JavaScript (posiblemente con WebSockets) para el frontend.
+*   **Implementar Autenticación/Autorización:** Añadir mecanismos de seguridad robustos para el endpoint del agente.
+*   **Desplegar con un Servidor WSGI de Producción:** Configurar el agente para que se ejecute con un servidor WSGI de producción para mayor estabilidad y rendimiento.
+*   **Logging y Monitoreo:** Implementar un manejo de errores y un sistema de logging más robusto para facilitar la depuración y el monitoreo del agente.
