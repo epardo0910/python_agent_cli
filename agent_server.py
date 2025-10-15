@@ -1,10 +1,10 @@
 import sys
 import logging
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 import subprocess
 import json
 import os
-from functools import wraps
+import re
 
 # Importa las herramientas y sus manifiestos desde tools.py
 from tools import AVAILABLE_TOOLS, TOOL_MANIFEST, AGENT_MEMORY_FILE
@@ -12,73 +12,37 @@ from tools import AVAILABLE_TOOLS, TOOL_MANIFEST, AGENT_MEMORY_FILE
 # --- CONFIGURACIÓN ---
 OLLAMA_MODEL = "granite4:micro-h"
 
-# Clave API para autenticación (se recomienda usar variables de entorno en producción)
-API_KEY = os.environ.get("AGENT_API_KEY")
-
 # Configura el logger
 logging.basicConfig(
-    level=logging.INFO,  # Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(
             "/home/epardo/projects/python_agent_cli/agent_server_debug.log"
         ),
-        logging.StreamHandler(sys.stdout),  # Para ver logs en la consola también
+        logging.StreamHandler(sys.stdout),
     ],
 )
 
-app = Flask(__name__, template_folder='src/templates', static_folder='src/static')
+app = Flask(__name__)
 
-
-# Decorador para requerir la clave API
-def require_api_key(view_function):
-    @wraps(view_function)
-    def decorated_function(*args, **kwargs):
-        if not API_KEY:
-            logging.error("AGENT_API_KEY no está configurada en el entorno.")
-            return (
-                jsonify(
-                    {
-                        "error": "Configuración del servidor incompleta: AGENT_API_KEY no definida."
-                    }
-                ),
-                500,
-            )
-
-        request_api_key = request.headers.get("X-API-Key")
-        if not request_api_key or request_api_key != API_KEY:
-            logging.warning(
-                f"Intento de acceso no autorizado con clave: {request_api_key}"
-            )
-            return jsonify({"error": "Acceso no autorizado."}), 401
-        return view_function(*args, **kwargs)
-
-    return decorated_function
-
-
-# --- FUNCIONES DEL ORQUESTADOR (ADAPTADAS PARA EL SERVIDOR) ---
-
+# --- FUNCIONES DEL ORQUESTADOR ---
 
 def load_long_term_memory() -> str:
-    """Carga las directivas y memoria a largo plazo del agente."""
     try:
         with open(AGENT_MEMORY_FILE, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        logging.info(
-            f"Advertencia: No se encontró el archivo de memoria del agente en {AGENT_MEMORY_FILE}."
-        )
         return "Advertencia: No se encontró el archivo de memoria del agente."
 
-
 def build_system_prompt(
-    long_term_memory: str, conversation_history: list, user_request: str
+    long_term_memory: str,
+    conversation_history: list,
+    user_request: str
 ) -> str:
-    """Construye el prompt completo para el modelo de Ollama."""
     tools_json_str = json.dumps(TOOL_MANIFEST, indent=2)
     history_str = "\n".join(conversation_history)
-
-    prompt = f"""
+    return f"""
 Eres un asistente experto de línea de comandos. Tu nombre es 'PyAgent'.
 Responde siempre en español. Sé conciso y directo en tus respuestas.
 
@@ -86,7 +50,7 @@ Responde siempre en español. Sé conciso y directo en tus respuestas.
 {long_term_memory}
 
 ### HERRAMIENTAS DISPONIBLES ###
-Tienes acceso a las siguientes herramientas. Para usarlas, responde ÚNICAMENTE con un objeto JSON válido:
+Tienes acceso a las siguientes herramientas. Para usarlas, responde ÚNICAMENTE con un objeto JSON válido que represente la herramienta a usar. No añadas texto adicional fuera del JSON.
 {tools_json_str}
 
 ### HISTORIAL DE LA CONVERSACIÓN ###
@@ -94,131 +58,98 @@ Tienes acceso a las siguientes herramientas. Para usarlas, responde ÚNICAMENTE 
 
 ### TAREA ACTUAL ###
 Usuario: {user_request}
-Antes de responder o usar una herramienta, formula un plan de acción detallado para resolver la tarea.
-Responde a la petición del usuario. Si necesitas usar una herramienta, genera el JSON correspondiente. Si tienes la respuesta final, proporciónala directamente y de forma concisa.
+Antes de responder o usar una herramienta, piensa paso a paso para formular un plan de acción. Luego, responde a la petición del usuario. Si necesitas usar una herramienta, genera el JSON correspondiente. Si tienes la respuesta final, proporciónala directamente en texto plano.
 """
-    return prompt
 
-
-def call_ollama(prompt: str) -> str:
-    """Llama al modelo de Ollama a través de la línea de comandos."""
+def call_ollama_stream(prompt: str):
     command = ["/usr/local/bin/ollama", "run", OLLAMA_MODEL, prompt]
-
-    logging.info(f"Llamando a Ollama con comando: {' '.join(command)}")
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        logging.error(f"Error al llamar a Ollama: {result.stderr}")
-        return json.dumps({"error": f"Error al llamar a Ollama: {result.stderr}"})
-
-    return result.stdout.strip()
-
+    logging.info(f"Llamando a Ollama (stream) con comando: {' '.join(command)}")
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+    for line in iter(process.stdout.readline, ''):
+        yield line
+    process.stdout.close()
+    return_code = process.wait()
+    if return_code != 0:
+        error_output = process.stderr.read()
+        logging.error(f"Error en el stream de Ollama: {error_output}")
+        yield json.dumps({"error": error_output})
 
 def execute_tool(tool_name: str, parameters: dict) -> str:
-    """Busca y ejecuta una herramienta del toolbelt."""
     if tool_name not in AVAILABLE_TOOLS:
-        logging.warning(f"Herramienta '{tool_name}' no existe.")
         return json.dumps({"error": f"La herramienta '{tool_name}' no existe."})
-
     logging.info(f"Ejecutando herramienta: {tool_name} con parámetros {parameters}")
-
-    # --- CAPA DE SEGURIDAD (¡ADAPTADA PARA SERVIDOR!) ---
-    # En un entorno de servidor, la confirmación interactiva no es posible.
-    # Aquí se podría implementar:
-    # 1. Una lista blanca de comandos seguros.
-    # 2. Un sistema de aprobación externo (ej. enviar a un humano vía API).
-    # 3. Un flag de configuración para permitir/denegar acciones peligrosas.
-    # Por simplicidad en este prototipo, asumimos que las herramientas son seguras o pre-aprobadas.
-    # Para run_shell_command y write_file, se recomienda extrema precaución.
-
     try:
         tool_function = AVAILABLE_TOOLS[tool_name]
         result = tool_function(**parameters)
-
-        # Convierte el resultado a una cadena JSON para el historial
-        tool_result_str = json.dumps(result) if isinstance(result, dict) else str(result)
-
-        # Añadir sugerencia de verificación post-acción para write_file y replace
-        if tool_name in ["write_file", "replace"]:
-            tool_result_str += (
-                "\nSugerencia: Después de modificar archivos, considera ejecutar un linter "
-                "o pruebas unitarias para verificar la integridad del código. "
-                "Por ejemplo: `run_shell_command(command='flake8 .')` o `run_shell_command(command='pytest')`."
-            )
-
-        return tool_result_str
+        return json.dumps(result) if isinstance(result, dict) else str(result)
     except Exception as e:
         logging.error(f"Error al ejecutar la herramienta '{tool_name}': {e}")
-        return json.dumps(
-            {"error": f"Error al ejecutar la herramienta '{tool_name}': {e}"}
-        )
-
+        return json.dumps({"error": f"Error al ejecutar la herramienta '{tool_name}': {e}"})
 
 # --- RUTAS DEL SERVIDOR ---
 
 
 @app.route("/chat", methods=["POST"])
-@require_api_key
 def chat():
     data = request.json
     user_message = data.get("user_message")
-    conversation_history = data.get("history", [])
+    raw_history = data.get("history", [])
 
     if not user_message:
         return jsonify({"error": "user_message es requerido"}), 400
 
     logging.info(f"Mensaje de usuario recibido: {user_message}")
-
     long_term_memory = load_long_term_memory()
 
-    # --- CICLO DE RAZONAMIENTO Y ACCIÓN (UN TURNO) ---
-    # Este bucle interno maneja las llamadas a herramientas dentro de un solo turno de chat.
-    # El cliente (quien llama a esta API) es responsable de manejar el historial completo.
+    # Convert history of dicts to a list of strings for the prompt
+    formatted_history = []
+    for msg in raw_history:
+        sender = "Usuario" if msg.get('sender') == 'user' else "Agente"
+        # Strip HTML tags from agent responses for the prompt
+        text = re.sub('<[^<]+?>', '', msg.get('text', ''))
+        formatted_history.append(f"{sender}: {text}")
 
-    current_turn_history = list(
-        conversation_history
-    )  # Copia para no modificar el original
-    current_turn_history.append(f"Usuario: {user_message}")
+    def event_stream(current_user_message):
+        current_turn_history = list(formatted_history)
+        current_turn_history.append(f"Usuario: {current_user_message}")
 
-    response_to_client = {}
-
-    while True:
-        prompt = build_system_prompt(
-            long_term_memory, current_turn_history, user_message
-        )
-        raw_ollama_response = call_ollama(prompt)
-        logging.info(f"Respuesta cruda de Ollama: {raw_ollama_response}")
-
-        try:
-            tool_call = json.loads(raw_ollama_response)
-            # Check if the JSON response is a tool call (i.e., has a single key which is the tool name)
-            if isinstance(tool_call, dict) and len(tool_call) == 1:
-                tool_name = next(iter(tool_call))  # Get the first (and only) key
+        while True:
+            prompt = build_system_prompt(long_term_memory, current_turn_history, current_user_message)
+            
+            response_buffer = ""
+            is_tool_call = False
+            
+            stream_generator = call_ollama_stream(prompt)
+            for chunk in stream_generator:
+                response_buffer += chunk
+                try:
+                    parsed_json = json.loads(response_buffer)
+                    if isinstance(parsed_json, dict) and len(parsed_json) == 1:
+                        is_tool_call = True
+                        break
+                except json.JSONDecodeError:
+                    pass
+            
+            if is_tool_call:
+                logging.info(f"Llamada a herramienta detectada: {response_buffer}")
+                tool_call = json.loads(response_buffer)
+                tool_name = next(iter(tool_call))
                 parameters = tool_call[tool_name]
-
+                
                 tool_result = execute_tool(tool_name, parameters)
                 logging.info(f"Resultado de la herramienta: {tool_result}")
-
-                if tool_name == "read_file":
-                    response_to_client = {"agent_response": tool_result}
-                    break # Exit the loop and return the file content directly
                 
-                current_turn_history.append(
-                    f"Observación de Herramienta: {tool_result}"
-                )
-                user_message = f"El resultado de la herramienta fue: {tool_result}. Proporciona una respuesta concisa al usuario basada en este resultado. Si el resultado es el contenido de un archivo, devuélvelo directamente."
-                logging.info(f"Re-prompting con: {user_message}")
+                current_turn_history.append(f"Observación de Herramienta: {tool_result}")
+                current_user_message = "La herramienta ha sido ejecutada. Proporciona la respuesta final al usuario."
                 continue
             else:
-                # Si es un JSON pero no una llamada a herramienta, trátalo como texto
-                response_to_client = {"agent_response": raw_ollama_response}
+                logging.info("Respuesta de texto detectada, iniciando streaming.")
+                yield response_buffer
+                for chunk in stream_generator:
+                    yield chunk
                 break
 
-        except json.JSONDecodeError:
-            # Si no es JSON, es la respuesta final del modelo
-            response_to_client = {"agent_response": raw_ollama_response}
-            break
-
-    return jsonify(response_to_client)
+    return Response(event_stream(user_message), mimetype='text/plain')
 
 @app.route("/")
 @app.route("/web_chat")

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyAgent Web</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>PyAgent</h1>
+            <button id="new-chat-btn">Nuevo Chat</button>
+        </div>
+        <div class="chat-history" id="chat-history">
+            <!-- Los mensajes del chat se cargarán aquí -->
+        </div>
+        <div id="typing-indicator-container" style="display: none;">
+            <div class="message agent">
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="user-input" placeholder="Escribe tu mensaje...">
+            <button id="send-button">Enviar</button>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=4"></script>
+</body>
+</html>
