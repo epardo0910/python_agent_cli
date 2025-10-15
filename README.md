@@ -18,6 +18,13 @@ Se han completado los siguientes hitos:
 *   **Backend Robusto:** Se ha implementado la lógica del backend para soportar todas las funcionalidades de la interfaz, incluyendo el *streaming* de respuestas.
 *   **Seguridad:** Se han eliminado claves de API que estaban hardcodeadas en el código del frontend.
 
+## Modos de Interacción
+
+El proyecto tiene dos modos de interacción:
+
+*   **Cliente de Terminal (`agent_client.py`):** Es el método recomendado para tareas de desarrollo y scripting. Funciona enviando peticiones directamente al endpoint `/chat` de la API.
+*   **Interfaz Web (`/web_chat`):** Una interfaz gráfica accesible desde el navegador que ofrece una experiencia de chat más visual e interactiva.
+
 ## Capacidades Actuales
 
 ### Backend y Herramientas
@@ -38,13 +45,15 @@ Se han completado los siguientes hitos:
 
 1.  **Solucionar Visualización del *Streaming*:** Aunque el backend envía la respuesta en *streaming*, el servidor Gunicorn la almacena en un búfer, impidiendo la visualización en tiempo real. Se necesita investigar la configuración de Gunicorn o cambiar a un worker asíncrono (`gevent`, `eventlet`) para solucionar este problema de visualización.
 
-2.  **Implementar Autenticación de Usuarios:** El endpoint del agente es actualmente público. Es crucial implementar un sistema de autenticación de usuarios para proteger el acceso a la interfaz web y a la API.
-
-3.  **Expandir y Refinar Herramientas:**
+2.  **Expandir y Refinar Herramientas:**
     *   Implementar completamente la herramienta `replace`.
     *   Añadir herramientas para interactuar con sistemas de control de versiones como Git.
 
-4.  **Mejorar la Lógica del Agente:**
+3.  **Mejorar la Lógica del Agente:**
     *   Refinar los prompts para obtener respuestas más consistentes y directas.
     *   Implementar un sistema de planificación de tareas más explícito.
     *   Mejorar la capacidad del agente para verificar los resultados de sus propias acciones (ej. ejecutar linters o tests después de escribir código).
+
+## Mejoras Postergadas
+
+*   **Implementar Autenticación de Usuarios:** El endpoint del agente es actualmente público. Es crucial implementar un sistema de autenticación de usuarios para proteger el acceso a la interfaz web y a la API.
